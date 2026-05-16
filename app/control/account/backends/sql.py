@@ -350,6 +350,18 @@ def _prepare_sql_url_and_connect_args(
         return normalized_url, None
 
     cleaned_url, ssl_options = _extract_sql_ssl_options(dialect, normalized_url)
+
+    # asyncpg >= 0.31 no longer accepts `ssl` via SQLAlchemy connect_args.
+    # For PostgreSQL with simple sslmode (no custom certs), keep sslmode in the
+    # URL and let the SQLAlchemy asyncpg dialect handle it natively.
+    if dialect == "postgresql" and ssl_options:
+        mode = _resolve_ssl_mode(dialect, ssl_options)
+        has_certs = _has_ssl_options(ssl_options, _PG_SSL_CERT_PARAM_KEYS)
+        if mode and not has_certs:
+            # Re-append sslmode to the cleaned URL for native dialect handling.
+            sep = "&" if "?" in cleaned_url else "?"
+            return f"{cleaned_url}{sep}sslmode={mode}", None
+
     return cleaned_url, _build_sql_connect_args(dialect, ssl_options)
 
 
